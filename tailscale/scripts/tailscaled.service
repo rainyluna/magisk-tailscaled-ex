@@ -23,6 +23,9 @@
 # @sub service | Service operation log
 # @desc View logs from tailscaled daemon, service.
 #
+# @cmd sync-hosts | Sync Tailscale peers to systemless /etc/hosts
+# @desc Fetch all peers from Tailscale and bind mount to /system/etc/hosts systemlessly.
+#
 # @cmd help | Show this help message
 # @sub all | Show detailed descriptions for all commands
 #
@@ -142,16 +145,48 @@ program(){
 _tailscaled(){
   logdir="${TS_DIR}/run"
   command="${TS_DAEMON_CMD}"
+  tailscaled_pre_up(){
+    # Ensure kernel tun device is available
+    mkdir -p /dev/net
+    if [ ! -c /dev/net/tun ]; then
+      if [ -c /dev/tun ]; then
+        ln -sf /dev/tun /dev/net/tun
+      elif [ -e /dev/tun ]; then
+        ln -sf /dev/tun /dev/net/tun
+      else
+        mknod /dev/net/tun c 10 200 2>/dev/null || true
+        chmod 0666 /dev/net/tun 2>/dev/null || true
+      fi
+    fi
+
+    # Enable kernel IP forwarding
+    sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+    sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null 2>&1 || true
+
+    # Move to root cgroup to prevent Android App Freezer from suspending tailscaled
+    if [ -f /sys/fs/cgroup/cgroup.procs ]; then
+      echo $$ > /sys/fs/cgroup/cgroup.procs 2>/dev/null || true
+    fi
+
+    # Clean up stale routes/rules from prior runs
+    tailscaled --cleanup >/dev/null 2>&1 || true
+  }
   tailscaled_up(){
     sed -Ei "s/^description=(\[.*][[:space:]]*)?/description=[ ⏲ $CURRENT_TIME | ✔ tailscaled service is running!!! ] /g" "$TS_MOD_PROP"
   }
   tailscaled_down(){
     sed -Ei "s/^description=(\[.*][[:space:]]*)?/description=[ ⏲ $CURRENT_TIME | ✘ tailscaled shutting down, service is stopped !!! ] /g" "$TS_MOD_PROP"
   }
-  pre_up=""
+  tailscaled_post_down(){
+    tailscaled_down
+    pkill -f route-keeper 2>/dev/null || true
+    [ -x "${DIR}/update-hosts.sh" ] && "${DIR}/update-hosts.sh" unmount >/dev/null 2>&1 || true
+    tailscaled --cleanup >/dev/null 2>&1 || true
+  }
+  pre_up="tailscaled_pre_up"
   pre_down=""
   post_up="tailscaled_up"
-  post_down="tailscaled_down"
+  post_down="tailscaled_post_down"
   case "$1" in
     status)
       program is_running
@@ -468,6 +503,13 @@ case "$1" in
     ;;
   restart)
     _tailscaled restart
+    ;;
+  sync-hosts)
+    if [ -x "${DIR}/update-hosts.sh" ]; then
+      "${DIR}/update-hosts.sh"
+    elif [ -x "${TS_DIR}/scripts/update-hosts.sh" ]; then
+      "${TS_DIR}/scripts/update-hosts.sh"
+    fi
     ;;
   status)
     status_tailscaled "$2"

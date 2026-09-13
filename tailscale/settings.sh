@@ -15,7 +15,7 @@ export PATH="${TS_DIR}/bin:${TS_DIR}/scripts:/data/adb/magisk:/data/adb/ksu/bin:
 export HOME="/data/adb/tailscale/" # Because tailscaled will write log to $HOME
 
 # Set tailscaled & tailscale configuration
-export TS_DAEMON_CMD="tailscaled -no-logs-no-support"
+export TS_DAEMON_CMD="tailscaled -tun=tailscale0 -no-logs-no-support"
 
 # Set tailscaled directory variables
 export TS_RUN_DIR="${TS_DIR}/run"

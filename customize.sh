@@ -61,6 +61,17 @@ arm64) F_ARCH="aarch64" ;;
 esac
 ui_print "- Detected architecture: $ARCH"
 
+# Check kernel TUN device
+if [ ! -c /dev/tun ] && [ ! -c /dev/net/tun ]; then
+	ui_print "! Warning: /dev/tun not detected. Kernel TUN support is required for kernel-side networking."
+fi
+
+# Ensure /dev/net/tun exists
+mkdir -p /dev/net
+if [ ! -c /dev/net/tun ] && [ -c /dev/tun ]; then
+	ln -sf /dev/tun /dev/net/tun
+fi
+
 if [ -d "$TS_DIR" ]; then
 	[ -f "$TS_DIR/tmp/tailscaled.state" ] && mv -f "$TS_DIR/tmp/tailscaled.state" "$TS_DIR/tailscaled.state"
 	ui_print "- Backup old files"
@@ -98,19 +109,21 @@ done
 ui_print "- Extracting files..."
 unzip -qqo "$ZIPFILE" -x 'META-INF/*' 'tailscale/*' -d "$MODPATH"
 
-mkdir -p "$TS_DIR" "$TS_SCRIPTS_DIR" "$SERVICE_DIR" "$MODPATH/system/bin/"
+mkdir -p "$TS_DIR" "$TS_SCRIPTS_DIR" "$SERVICE_DIR" "$MODPATH/system/bin/" "$MODPATH/system/etc/"
 unzip -qqjo "$ZIPFILE" 'tailscale/scripts/*' -d "$TS_SCRIPTS_DIR"
 unzip -qqjo "$ZIPFILE" 'tailscale/settings.sh' -d "$TS_DIR"
 ln -sf "$TS_BIN_DIR/tailscaled" "$TS_BIN_DIR/tailscale"
 ln -sf "$TS_BIN_DIR/"* "$MODPATH/system/bin/"
 
 ln -sf "$TS_SCRIPTS_DIR/tailscaled.service" "$MODPATH/system/bin/"
+[ -f "$TS_DIR/hosts" ] && cp -f "$TS_DIR/hosts" "$MODPATH/system/etc/hosts"
 
 ui_print "- Setting permissions"
 set_perm_recursive "$TS_BIN_DIR/" 0 0 0755 0755 "u:object_r:system_file:s0"
 set_perm_recursive "$TS_SCRIPTS_DIR/" 0 0 0755 0755 "u:object_r:system_file:s0"
 set_perm_recursive "$MODPATH/system/bin/" 0 0 0755 0755 "u:object_r:system_file:s0"
 set_perm "$MODPATH/service.sh" 0 0 0755 "u:object_r:system_file:s0"
+[ -f "$MODPATH/system/etc/hosts" ] && set_perm "$MODPATH/system/etc/hosts" 0 0 0644 "u:object_r:system_file:s0"
 
 if [ ! -f "$SERVICE_DIR/tailscaled_service.sh" ]; then
 	# offer to move module scripts to general scripts

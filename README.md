@@ -38,27 +38,26 @@ After installation, the Tailscale daemon (`tailscaled`) will run automatically o
 
 ## Limitation
 
-- This module only support for `arm` or `arm64` architecture, you can download manually for other architecture.
-- Tailscale binary is designed to run in Linux environment, Some feature might not works properly.
-- MagicDNS currently not working.
-- Runs in userspace mode, read more at [https://tailscale.com/kb/1112/userspace-networking](https://tailscale.com/kb/1112/userspace-networking) 
-- Subnet routes is manually routed with socks5-tun, you must define your own ip routes to `tailscaled.tun.up` and `tailscaled.tun.down`
+- This module only supports `arm` or `arm64` architecture.
+- Requires kernel TUN device support (`/dev/tun` in the Android kernel).
+- When using MagicDNS, you may need to disable accept-dns (`tailscale set --accept-dns=false`) depending on ROM DNS configuration.
 
 ## Usage of this module
 
-This module runs `tailscaled` with the following command:
+This module runs `tailscaled` using native kernel-side networking:
 
 ```bash
-tailscaled -tun=userspace-networking -statedir=/data/adb/tailscale/tmp/ -state=/data/adb/tailscale/tmp/tailscaled.state -socket=/data/adb/tailscale/tmp/tailscaled.sock -port=41641
+tailscaled -tun=tailscale0 -no-logs-no-support
 ```
-The state file for tailscaled is stored at `/data/adb/tailscale/tmp/tailscaled.state`, and the log output is written to `/data/adb/tailscale/run/tailscaled.log`.
+The daemon creates a native `tailscale0` TUN interface in the Linux kernel using WireGuard. All applications on the device can communicate directly with your Tailscale network without needing a SOCKS5/HTTP proxy.
+
+The state file for tailscaled is stored at `/data/adb/tailscale/tailscaled.state`, socket at `/data/adb/tailscale/tailscaled.sock`, and log output is written to `/data/adb/tailscale/run/tailscaled.log`.
 
 ## Available command
 
-- `tailscale`: This command is execute tailscale operation.
-- `tailscaled`: This command is execute tailscaled daemon operation.
-- `tailscaled.service`: This command for manage tailscaled service, you can start,stop,restart daemon and view live logs the tailscaled operation.
-- `tailscaled.tun`: This command is for manage hev-socks5-tunnel.
+- `tailscale`: This command executes tailscale operations.
+- `tailscaled`: This command executes tailscaled daemon operations.
+- `tailscaled.service`: This command manages the tailscaled service (start, stop, restart, status, logs).
   
 ## Example of Using Tailscale
 
@@ -174,43 +173,50 @@ Tailscale has manny issues. You can check them out [here](https://github.com/tai
 
 ### Cannot access other tailnet devices
 
-This module runs the `tailscaled` binary in userspace-networking mode. To access other devices in the tailnet, you must use a local proxy on port 1099. I've implemented a workaround using `hev-socks5-tunnel` to tunnel local socks5 on port 1099 and bind it to the interface named `tailscale0`. 
+This module runs `tailscaled` with native kernel-side networking. Traffic is routed directly through the kernel `tailscale0` TUN interface and WireGuard tunnel:
 
-Please note, this `tailscale0` interface is different from the original `tailscale0` interface on Linux. In Linux, `tailscale0` is managed by the `tailscaled` daemon, whereas in this module, `tailscale0` is managed by `hev-socks5-tunnel`. The default gateway is `100.100.100.100`, as defined in the `tailscaled.tun.config.yaml` file.
-
-This solution should work on most common devices. However, if you encounter problems accessing other tailnet devices, follow these troubleshooting steps:
-
-1. Verify that `tailscaled.service` is running. If not, restart it with `tailscaled.service restart`.
-2. Verify that `tailscaled.tun` is running. If not, restart it with `tailscaled.tun restart`.
-3. Check if your device is connected to tailscaled and try a ping connection with `tailscale ping <your_tailnet_ip>`.
-4. Verify the port you want to access is accessible. You can do this by accessing it with another tailscale device or using the Tailscale Android App.
-5. Check if the local socks5 server is working with curl. Execute the following command:
+1. Verify that `tailscaled.service` is running:
+    ```bash
+    su -c 'tailscaled.service status'
     ```
-    curl 1.1.1.1 -vI -x localhost:1099
+2. Verify that the `tailscale0` kernel interface exists and has an assigned IP:
+    ```bash
+    su -c 'ip addr show tailscale0'
     ```
-    If it connects, then the local socks5 server is running and working.
-
-6. Check if the local socks5 server can connect to the tailnet network.
+3. Check routing rules and table 52:
+    ```bash
+    su -c 'ip rule show'
+    su -c 'ip route show table 52'
     ```
-    curl <your_tailnet_ip>:<port> -vI -x localhost:1099
+4. Test tailnet ping to a peer:
+    ```bash
+    su -c 'tailscale ping <peer_tailnet_ip>'
     ```
-    If it connects, then the local socks5 server is functioning correctly.
+5. If connections fail, verify `/dev/net/tun` exists and kernel TUN support is active:
+    ```bash
+    ls -l /dev/net/tun /dev/tun
+    ```
 
-7. Finally, check the connection directly with `curl <your_tailnet_ip>:<port> -vI`.
+### Subnet routes & Exit nodes
 
-If the last step fails, the problem likely lies with `socks5-tun`. Verify there is an interface named `tailscale0`. If it exists, the problem may be with the iptables route, either due to a conflict with another rule or some other issue. Feel free to explore your own solutions. If you're unable to resolve the issue, contact me on Telegram and I'll see if I can assist you.
+Because kernel-side networking is active, subnet routes and exit nodes work via standard Tailscale commands without manual socks5 wrappers:
 
-### My subnet-routes is'nt working
-
-Yes because we need define the routes with `iptables` in file `tailscaled.tun.up` and `tailscaled.tun.down`, you can check this [issue reference](https://github.com/anasfanani/Magisk-Tailscaled/issues/17).
-I suppose you're already know the iptables works, if dont, there are chatAI to ask.
-You can copy whole `tailscaled.tun.up` script to chatAI and send instruction with please add 192.168.1.1/24 to this route, also dont forget `tailscaled.tun.down` 
-
-If you still can't do it by yourself, I'm verry welcome to people who needs help.
-
-### Exit nodes
-
-You can check this [issue reference](https://github.com/anasfanani/Magisk-Tailscaled/issues/17).
+- **Advertise subnet routes from phone**:
+  ```bash
+  su -c 'tailscale up --advertise-routes=192.168.1.0/24'
+  ```
+- **Accept routes from peers**:
+  ```bash
+  su -c 'tailscale up --accept-routes=true'
+  ```
+- **Use an exit node**:
+  ```bash
+  su -c 'tailscale up --exit-node=<exit-node-ip-or-name>'
+  ```
+- **Advertise as an exit node**:
+  ```bash
+  su -c 'tailscale up --advertise-exit-node'
+  ```
 
 ### ipv6
 
