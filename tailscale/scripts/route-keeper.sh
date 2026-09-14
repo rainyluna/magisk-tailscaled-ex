@@ -11,7 +11,7 @@ DIR=$(dirname "$(realpath "$0")")
 get_dns_upstream() {
     local upstream="${TS_DNS_UPSTREAM:-100.85.255.48}"
     if [ -f "/data/adb/tailscale/dns_upstream" ]; then
-        upstream=$(cat /data/adb/tailscale/dns_upstream | tr -d '[:space:]')
+        upstream=$(cat /data/adb/tailscale/dns_upstream | tr -d "[:space:]")
     fi
     case "$upstream" in
         none|off|disable|disabled|"") echo "" ;;
@@ -27,7 +27,10 @@ clean_dns_rules() {
     while iptables -t nat -D OUTPUT -p udp ! -d "$upstream" --dport 53 -j DNAT --to-destination "$upstream:53" 2>/dev/null; do :; done
     while iptables -t nat -D OUTPUT -p tcp ! -d "$upstream" --dport 53 -j DNAT --to-destination "$upstream:53" 2>/dev/null; do :; done
     while iptables -t nat -D POSTROUTING -o tailscale0 -j MASQUERADE 2>/dev/null; do :; done
+    DNS_RULES_APPLIED=0
 }
+
+DNS_RULES_APPLIED=0
 
 apply_rules() {
     # Re-assert Tailscale kernel routing rules (table 52)
@@ -66,8 +69,11 @@ apply_rules() {
         if ! iptables -t nat -C OUTPUT -p tcp ! -d "$dns_target" --dport 53 -j DNAT --to-destination "$dns_target:53" 2>/dev/null; then
             iptables -t nat -I OUTPUT -p tcp ! -d "$dns_target" --dport 53 -j DNAT --to-destination "$dns_target:53" 2>/dev/null || true
         fi
+        DNS_RULES_APPLIED=1
     else
-        clean_dns_rules
+        if [ "$DNS_RULES_APPLIED" = "1" ]; then
+            clean_dns_rules
+        fi
     fi
 }
 
@@ -82,10 +88,12 @@ trap clean_dns_rules EXIT INT TERM
 
 apply_rules
 
-# Real-time event listener via netlink
+# Real-time event listener via netlink with debounce
 (
     while true; do
         ip monitor route rule link 2>/dev/null | while read -r _; do
+            sleep 1
+            while read -t 1 -r _; do :; done
             apply_rules
         done
         sleep 5
@@ -93,7 +101,7 @@ apply_rules
 ) &
 MONITOR_PID=$!
 
-# Heartbeat loop
+# Heartbeat loop (30s interval)
 while true; do
     if ! pidof tailscaled >/dev/null 2>&1; then
         clean_dns_rules
@@ -101,5 +109,5 @@ while true; do
         exit 0
     fi
     apply_rules
-    sleep 10
+    sleep 30
 done
