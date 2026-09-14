@@ -20,6 +20,9 @@ export TS_DAEMON_CMD="tailscaled -tun=tailscale0 -no-logs-no-support"
 # Set tailscaled directory variables
 export TS_RUN_DIR="${TS_DIR}/run"
 
+# Set DNS upstream redirection (e.g. AdGuard Home over Tailscale)
+export TS_DNS_UPSTREAM="100.85.255.48"
+
 # Set tailscaled log variables
 export TS_LOG_FILE="${TS_RUN_DIR}/tailscaled.log"
 export TS_RUN_LOG_FILE="${TS_RUN_DIR}/runs.log"

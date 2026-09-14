@@ -180,6 +180,7 @@ _tailscaled(){
   tailscaled_post_down(){
     tailscaled_down
     pkill -f route-keeper 2>/dev/null || true
+    [ -x "${DIR}/route-keeper.sh" ] && "${DIR}/route-keeper.sh" clean >/dev/null 2>&1 || true
     [ -x "${DIR}/update-hosts.sh" ] && "${DIR}/update-hosts.sh" unmount >/dev/null 2>&1 || true
     tailscaled --cleanup >/dev/null 2>&1 || true
   }
