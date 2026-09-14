@@ -47,7 +47,11 @@ apply_rules() {
         ip -6 rule add from fd7a:115c:a1e0::/48 lookup 52 pref 5230 2>/dev/null || true
     fi
 
-    # Re-assert systemless /system/etc/hosts bind mount
+    # Re-assert systemless /system/etc/hosts bind mount & populate peers if missing
+    if [ ! -f "/data/adb/tailscale/hosts" ] || ! grep -q "=== TAILSCALE PEERS START ===" /data/adb/tailscale/hosts 2>/dev/null; then
+        [ -x "$DIR/update-hosts.sh" ] && "$DIR/update-hosts.sh" >/dev/null 2>&1 || true
+    fi
+
     if ! grep -q " /system/etc/hosts " /proc/mounts; then
         if [ -f "/data/adb/tailscale/hosts" ]; then
             chmod 0644 /data/adb/tailscale/hosts
@@ -102,6 +106,7 @@ apply_rules
 MONITOR_PID=$!
 
 # Heartbeat loop (30s interval)
+TICKS=0
 while true; do
     if ! pidof tailscaled >/dev/null 2>&1; then
         clean_dns_rules
@@ -109,5 +114,10 @@ while true; do
         exit 0
     fi
     apply_rules
+    TICKS=$((TICKS + 1))
+    if [ "$TICKS" -ge 10 ]; then
+        TICKS=0
+        [ -x "$DIR/update-hosts.sh" ] && "$DIR/update-hosts.sh" >/dev/null 2>&1 || true
+    fi
     sleep 30
 done

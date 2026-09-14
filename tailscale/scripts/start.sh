@@ -31,7 +31,17 @@ esac
 start_service() {
   if [ ! -f "${TS_MOD_DIR}/disable" ]; then
     tailscaled.service start >> "/dev/null" 2>&1
-    (sleep 3; [ -x "${DIR}/update-hosts.sh" ] && "${DIR}/update-hosts.sh" >> "/dev/null" 2>&1) &
+    (
+      for delay in 3 5 10 15 30; do
+        sleep "$delay"
+        if [ -x "${DIR}/update-hosts.sh" ]; then
+          "${DIR}/update-hosts.sh" >> "/dev/null" 2>&1
+          if grep -q "=== TAILSCALE PEERS START ===" "${TS_DIR}/hosts" 2>/dev/null; then
+            break
+          fi
+        fi
+      done
+    ) &
     pkill -f route-keeper 2>/dev/null || true
     [ -x "${DIR}/route-keeper.sh" ] && nohup "${DIR}/route-keeper.sh" >> "/dev/null" 2>&1 &
   fi
