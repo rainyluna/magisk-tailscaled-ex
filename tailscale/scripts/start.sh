@@ -15,6 +15,12 @@ if [ ! -c /dev/net/tun ]; then
         chmod 0666 /dev/net/tun 2>/dev/null || true
     fi
 fi
+
+# Ensure tailscale CLI binaries are universally accessible in root PATH & /dev
+mkdir -p /data/adb/ksu/bin 2>/dev/null || true
+[ -x "${TS_DIR}/bin/tailscale" ] && ln -sf "${TS_DIR}/bin/tailscale" /data/adb/ksu/bin/tailscale 2>/dev/null || true
+[ -x "${TS_DIR}/bin/tailscaled" ] && ln -sf "${TS_DIR}/bin/tailscaled" /data/adb/ksu/bin/tailscaled 2>/dev/null || true
+[ -x "${TS_DIR}/bin/tailscale" ] && ln -sf "${TS_DIR}/bin/tailscale" /dev/tailscale 2>/dev/null || true
 case "$1" in
     postinstall)
       rm -rf $TS_RUN_DIR && mkdir -p $TS_RUN_DIR

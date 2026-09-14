@@ -170,6 +170,12 @@ _tailscaled(){
 
     # Clean up stale routes/rules from prior runs
     tailscaled --cleanup >/dev/null 2>&1 || true
+
+    # Ensure tailscale CLI binaries are universally accessible in root PATH & /dev
+    mkdir -p /data/adb/ksu/bin 2>/dev/null || true
+    [ -x "${DIR}/bin/tailscale" ] && ln -sf "${DIR}/bin/tailscale" /data/adb/ksu/bin/tailscale 2>/dev/null || true
+    [ -x "${DIR}/bin/tailscaled" ] && ln -sf "${DIR}/bin/tailscaled" /data/adb/ksu/bin/tailscaled 2>/dev/null || true
+    [ -x "${DIR}/bin/tailscale" ] && ln -sf "${DIR}/bin/tailscale" /dev/tailscale 2>/dev/null || true
   }
   tailscaled_up(){
     sed -Ei "s/^description=(\[.*][[:space:]]*)?/description=[ ⏲ $CURRENT_TIME | ✔ tailscaled service is running!!! ] /g" "$TS_MOD_PROP"
@@ -182,6 +188,7 @@ _tailscaled(){
     pkill -f route-keeper 2>/dev/null || true
     [ -x "${DIR}/route-keeper.sh" ] && "${DIR}/route-keeper.sh" clean >/dev/null 2>&1 || true
     [ -x "${DIR}/update-hosts.sh" ] && "${DIR}/update-hosts.sh" unmount >/dev/null 2>&1 || true
+    rm -f /dev/tailscale 2>/dev/null || true
     tailscaled --cleanup >/dev/null 2>&1 || true
   }
   pre_up="tailscaled_pre_up"
