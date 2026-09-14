@@ -1,7 +1,6 @@
 id=magisk-tailscaled
-name=Magisk Tailscaled
-version=v2.0.0.1
-versionCode=02000001
-author=anasfanani
-description=Tailscale. The easiest, most secure way to use WireGuard and 2FA.
-updateJson=https://raw.githubusercontent.com/anasfanani/Magisk-Tailscaled/master/update.json
+name=Magisk Tailscaled Ex
+version=v2.1.0-ex
+versionCode=02010001
+author=anasfanani, rainyluna
+description=Tailscale Extended: Kernel TUN mode, route-keeper daemon, systemless hosts peer sync, and AdGuard DNS redirection.

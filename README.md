@@ -5,22 +5,64 @@
 [![issues - Magisk-Tailscaled](https://img.shields.io/github/issues/anasfanani/Magisk-Tailscaled)](https://github.com/anasfanani/Magisk-Tailscaled/issues)
 [![Static Badge](https://img.shields.io/badge/Discussion-Telegram-blue?style=flat&logo=telegram&link=t.me%2Fsystembinsh%2F158)](https://t.me/systembinsh/158)
 
-# Magisk Tailscaled
+# Magisk Tailscaled Ex (Extended)
 
-This repository contains a Magisk module for running Tailscale on rooted Android devices.
+[![rainyluna - magisk-tailscaled-ex](https://img.shields.io/static/v1?label=rainyluna&message=magisk-tailscaled-ex&color=blue&logo=github)](https://github.com/rainyluna/magisk-tailscaled-ex "Go to GitHub repo")
+[![Based on anasfanani/Magisk-Tailscaled](https://img.shields.io/badge/based%20on-anasfanani%2FMagisk--Tailscaled-lightgrey)](https://github.com/anasfanani/Magisk-Tailscaled)
 
-## What is Tailscale?
+An enhanced Magisk/KernelSU module for running native Tailscale on rooted Android devices with kernel WireGuard TUN networking, automatic route persistence, systemless `/etc/hosts` peer sync, and transparent AdGuard Home DNS interception.
 
-Tailscale is a networking tool that allows you to connect each of your devices as if they were on the same VPN. For example, an Android phone connected to the Tailscale network can communicate with any other device connected to Tailscale. You can install it on your PC and Android device and then connect them using the Tailscale IP. For more information, check out [How Tailscale Works](https://tailscale.com/blog/how-tailscale-works).
+---
 
-## Difference between this Magisk module and the Tailscale app on Play Store
+## What is Changed vs. Original (`anasfanani/Magisk-Tailscaled`)?
 
-The [Tailscale app](https://play.google.com/store/apps/details?id=com.tailscale.ipn) on the Play Store runs with Android's VPN, which means you can't use Tailscale while another VPN is active. This Magisk module, on the other hand, allows you to use both an Android VPN and Tailscale at the same time.
+This fork (`magisk-tailscaled-ex`) addresses the primary real-world pain points of running Tailscale as a background daemon on modern Android:
+
+| Feature | Original Upstream | Magisk Tailscaled Ex |
+| :--- | :--- | :--- |
+| **Networking Mode** | Userspace networking (`hev-socks5-tunnel`), requiring SOCKS5 proxy configuration | **Native kernel TUN (`-tun=tailscale0`)** using Linux kernel WireGuard. Direct app connectivity with 0 configuration. |
+| **Routing Stability** | Rules frequently lost when roaming between Wi-Fi and mobile data | **`route-keeper` daemon** listening to netlink events (`ip monitor`) and heartbeat loop to continuously re-assert Table 52 rules. |
+| **MagicDNS / Peer Discovery** | MagicDNS broken (Android apps cannot query `100.100.100.100` via root daemon) | **Systemless `/system/etc/hosts` bind mount** (`update-hosts.sh`) dynamically populating all tailnet peer short names and FQDNs. |
+| **DNS Interception & Filtering** | None (DNS queries bypass Tailnet or fail) | **Transparent Port 53 DNAT & MASQUERADE** redirecting all app DNS queries to AdGuard Home (or custom upstream) over Tailscale. |
+| **Process Lifecycle** | Can be frozen by Android App Freezer / Doze | Daemon automatically added to root cgroup (`cgroup.procs`) to prevent freeze. |
+| **Teardown & Cleanup** | Partial cleanup | Clean teardown of iptables NAT rules, route-keeper daemon, and `/system/etc/hosts` unmount on stop/uninstall. |
+
+---
+
+## Highlights of Enhancements
+
+### 1. Native Kernel WireGuard TUN (`tailscale0`)
+* Eliminates the userspace proxy layer (`hev-socks5-tunnel`).
+* Automatically checks and initializes `/dev/net/tun` kernel nodes and sets `net.ipv4.ip_forward=1`.
+* All Android apps and terminal tools can reach Tailscale IPs directly.
+
+### 2. `route-keeper` Background Daemon
+* Android's `netd` periodically rewrites policy routing (`ip rule`), wiping custom routing tables when interfaces toggle (Wi-Fi ↔ LTE/5G).
+* `route-keeper` runs in the background, listening to real-time netlink events (`ip monitor route rule link`).
+* Instantly re-asserts:
+  * Table 52 routing rules (`to 100.64.0.0/10 lookup 52 pref 5210`, `from 100.64.0.0/10 lookup 52 pref 5230`)
+  * IPv6 ULA routing (`fd7a:115c:a1e0::/48`)
+  * Systemless `/system/etc/hosts` mount
+  * Outgoing port 53 DNS redirection rules
+
+### 3. Systemless Host Resolution (`update-hosts.sh`)
+* Resolves the "MagicDNS on Android" limitation.
+* Runs on service start and can be manually refreshed with `su -c tailscaled.service sync-hosts`.
+* Parses `tailscale status --json` with `jq` and writes peer names (e.g. `jellyfin`, `jellyfin.tailnet.ts.net`) into a custom hosts file, bind-mounting it over `/system/etc/hosts` without modifying the read-only `/system` partition.
+
+### 4. Transparent AdGuard Home / Custom DNS Interception
+* Intercepts outgoing port 53 (UDP and TCP) DNS traffic from all apps and redirects it to your AdGuard Home instance (default `100.85.255.48:53`) over Tailscale.
+* Automatically injects `POSTROUTING MASQUERADE` on `tailscale0` to prevent Android socket source IP mismatches from breaking resolution.
+* **Fail-Safe**: If `tailscale0` goes down or Tailscale is stopped, DNS redirection rules are immediately removed to avoid breaking internet connectivity.
+* Easily configurable in `settings.sh` (`TS_DNS_UPSTREAM`) or via `/data/adb/tailscale/dns_upstream`.
+
+---
 
 ## Requirements
 
 - A basic networking knowledge.
-- An Android device with Magisk root installed.
+- An Android device with Magisk or KernelSU root installed.
+- Kernel TUN device support (`/dev/tun` in the Android kernel).
 
 ## Quick Start & Installation
 
